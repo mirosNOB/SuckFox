@@ -169,6 +169,33 @@
                 2px 2px 2px rgba(0, 0, 0, 0.3);
         }
 
+        .upgrades {
+            margin-top: 20px;
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+        }
+
+        .upgrade-btn {
+            background: rgba(255, 215, 0, 0.1);
+            border: 1px solid rgba(255, 215, 0, 0.2);
+            color: #daa520;
+            padding: 10px;
+            border-radius: 10px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .upgrade-btn:hover:not(:disabled) {
+            background: rgba(255, 215, 0, 0.2);
+            transform: translateY(-2px);
+        }
+
+        .upgrade-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
         @keyframes floatUp {
             0% {
                 transform: translateY(0) scale(1);
@@ -188,26 +215,67 @@
         <div class="score">Баланс: <span id="clicks">0</span> yoncoin</div>
         <div class="click-area" id="clickArea">
             <div class="click-text">N</div>
-            <div class="click-number">+16</div>
+            <div class="click-number">+<span id="clickPower">16</span></div>
         </div>
-        <div class="clicks-needed">Нужно 500 кликов</div>
+        <div class="upgrades">
+            <button class="upgrade-btn" id="powerUpgrade">
+                Сила клика +8<br>
+                Цена: <span id="powerPrice">100</span>
+            </button>
+            <button class="upgrade-btn" id="autoClickUpgrade">
+                Авто-клик +1/сек<br>
+                Цена: <span id="autoPrice">200</span>
+            </button>
+        </div>
         <button class="generate-btn" id="generateBtn" disabled>Получить код</button>
         <div class="code" id="codeResult"></div>
     </div>
 
     <script>
         const SECRET = "nevietap2024";
-        let clicks = 0;
-        const clicksNeeded = 500;
+        let gameState = {
+            clicks: 0,
+            clickPower: 16,
+            autoClickPower: 0,
+            powerPrice: 100,
+            autoPrice: 200
+        };
+
+        // Загружаем сохранённый прогресс
+        const savedState = localStorage.getItem('gameState');
+        if (savedState) {
+            gameState = JSON.parse(savedState);
+            updateUI();
+        }
+
         const clickArea = document.getElementById('clickArea');
         const clicksDisplay = document.getElementById('clicks');
         const generateBtn = document.getElementById('generateBtn');
         const codeResult = document.getElementById('codeResult');
+        const clickPowerDisplay = document.getElementById('clickPower');
+        const powerUpgradeBtn = document.getElementById('powerUpgrade');
+        const autoClickUpgradeBtn = document.getElementById('autoClickUpgrade');
+        const powerPriceDisplay = document.getElementById('powerPrice');
+        const autoPriceDisplay = document.getElementById('autoPrice');
+
+        function updateUI() {
+            clicksDisplay.textContent = gameState.clicks;
+            clickPowerDisplay.textContent = gameState.clickPower;
+            powerPriceDisplay.textContent = gameState.powerPrice;
+            autoPriceDisplay.textContent = gameState.autoPrice;
+            generateBtn.disabled = gameState.clicks < 500;
+            powerUpgradeBtn.disabled = gameState.clicks < gameState.powerPrice;
+            autoClickUpgradeBtn.disabled = gameState.clicks < gameState.autoPrice;
+        }
+
+        function saveGame() {
+            localStorage.setItem('gameState', JSON.stringify(gameState));
+        }
 
         function createPlusAnimation(x, y) {
             const plus = document.createElement('div');
             plus.className = 'plus-animation';
-            plus.textContent = '+16';
+            plus.textContent = `+${gameState.clickPower}`;
             plus.style.left = x + 'px';
             plus.style.top = y + 'px';
             clickArea.appendChild(plus);
@@ -228,41 +296,114 @@
             return btoa(str).replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
         }
 
+        // SHA-256 хеширование
+        async function sha256(message) {
+            const msgBuffer = new TextEncoder().encode(message);
+            const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
+            const hashArray = Array.from(new Uint8Array(hashBuffer));
+            const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+            return hashHex;
+        }
+
+        // Поиск доказательства работы
+        async function findProof(amount, salt) {
+            const zeros = Math.min(6, Math.max(1, amount.toString().length - 2));
+            const target = "0".repeat(zeros);
+            const proofCheck = await sha256(`${amount}|${salt}`);
+
+            let proof = "";
+            let attempts = 0;
+            const maxAttempts = 100000;
+
+            while (attempts < maxAttempts) {
+                proof = generateRandomString(8);
+                const hash = await sha256(`${proof}|${amount}|${salt}`);
+                if (hash.startsWith(target) && (await sha256(`${amount}|${salt}`)).substring(0, 8) === proofCheck.substring(0, 8)) {
+                    return proof;
+                }
+                attempts++;
+            }
+            return null;
+        }
+
         // Генерация кода
-        function generateCode(amount) {
+        async function generateCode(amount) {
             const timestamp = Math.floor(Date.now() / 1000);
             const salt = generateRandomString(8);
             const check_str = `${timestamp}|${amount}|${salt}|${SECRET}`;
             const check = base64Encode(check_str).substring(0, 8);
 
-            return base64Encode(`${timestamp}|${amount}|${check}|${salt}`);
+            const proof = await findProof(amount, salt);
+            if (!proof) {
+                return null;
+            }
+
+            return base64Encode(`${timestamp}|${amount}|${check}|${salt}|${proof}`);
         }
 
         clickArea.onclick = (e) => {
-            clicks += 16;
-            clicksDisplay.textContent = clicks;
+            gameState.clicks += gameState.clickPower;
             createPlusAnimation(e.offsetX, e.offsetY);
+            updateUI();
+            saveGame();
+        };
 
-            if (clicks >= clicksNeeded) {
-                generateBtn.disabled = false;
+        powerUpgradeBtn.onclick = () => {
+            if (gameState.clicks >= gameState.powerPrice) {
+                gameState.clicks -= gameState.powerPrice;
+                gameState.clickPower += 8;
+                gameState.powerPrice = Math.floor(gameState.powerPrice * 1.5);
+                updateUI();
+                saveGame();
             }
         };
 
-        generateBtn.onclick = () => {
-            if (clicks >= clicksNeeded) {
-                const amount = Math.floor(Math.random() * 900) + 100;
-                const code = generateCode(amount);
-                codeResult.style.display = 'block';
-                codeResult.innerHTML = `
-                    <p>Ваш код на ${amount} yoncoin:</p>
-                    <strong>${code}</strong>
-                    <p>Отправьте этот код боту</p>
-                `;
-                clicks = 0;
-                clicksDisplay.textContent = clicks;
+        autoClickUpgradeBtn.onclick = () => {
+            if (gameState.clicks >= gameState.autoPrice) {
+                gameState.clicks -= gameState.autoPrice;
+                gameState.autoClickPower += 1;
+                gameState.autoPrice = Math.floor(gameState.autoPrice * 1.5);
+                updateUI();
+                saveGame();
+            }
+        };
+
+        generateBtn.onclick = async () => {
+            if (gameState.clicks >= 500) {
                 generateBtn.disabled = true;
+                generateBtn.textContent = 'Генерация...';
+
+                const code = await generateCode(gameState.clicks);
+                if (code) {
+                    codeResult.style.display = 'block';
+                    codeResult.innerHTML = `
+                        <p>Ваш код на ${gameState.clicks} yoncoin:</p>
+                        <strong>${code}</strong>
+                        <p>Отправьте этот код боту</p>
+                    `;
+                    gameState.clicks = 0;
+                    updateUI();
+                    saveGame();
+                } else {
+                    codeResult.style.display = 'block';
+                    codeResult.innerHTML = `
+                        <p style="color: #ff6b6b;">Ошибка генерации кода. Попробуйте еще раз.</p>
+                    `;
+                }
+
+                generateBtn.textContent = 'Получить код';
+                generateBtn.disabled = gameState.clicks < 500;
             }
         };
+
+        // Авто-клик каждую секунду
+        setInterval(() => {
+            if (gameState.autoClickPower > 0) {
+                gameState.clicks += gameState.autoClickPower;
+                updateUI();
+                saveGame();
+            }
+        }, 1000);
     </script>
 </body>
 
