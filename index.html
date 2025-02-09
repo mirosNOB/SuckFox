@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>Nevie Tap</title>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cinzel:wght@700&display=swap">
+    <style>
+        body {
+            font-family: 'Cinzel', serif;
+            background: #0a0a0a;
+            color: white;
+            margin: 0;
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            background: linear-gradient(135deg, #0a0a0a 0%, #1a1a1a 100%);
+        }
+
+        .container {
+            text-align: center;
+            background: rgba(20, 20, 20, 0.95);
+            padding: 25px;
+            border-radius: 20px;
+            box-shadow: 0 0 40px rgba(255, 215, 0, 0.15);
+            max-width: 90%;
+            width: 350px;
+            border: 1px solid rgba(255, 215, 0, 0.1);
+        }
+
+        .click-area {
+            width: 220px;
+            height: 220px;
+            background: linear-gradient(145deg, #b8860b, #daa520);
+            border-radius: 50%;
+            margin: 20px auto;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            position: relative;
+            box-shadow:
+                0 0 30px rgba(255, 215, 0, 0.3),
+                inset 0 0 20px rgba(0, 0, 0, 0.2);
+            border: 8px solid #1a1a1a;
+            overflow: hidden;
+        }
+
+        .click-area::before {
+            content: '';
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            background: radial-gradient(circle at center, transparent 30%, rgba(0, 0, 0, 0.2) 100%);
+            pointer-events: none;
+        }
+
+        .click-area::after {
+            content: '';
+            position: absolute;
+            width: 90%;
+            height: 90%;
+            border-radius: 50%;
+            border: 2px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .click-area:active {
+            transform: scale(0.95);
+            box-shadow:
+                0 0 50px rgba(255, 215, 0, 0.4),
+                inset 0 0 30px rgba(0, 0, 0, 0.3);
+        }
+
+        .click-text {
+            font-size: 120px;
+            font-weight: bold;
+            color: #1a1a1a;
+            text-shadow:
+                2px 2px 2px rgba(255, 255, 255, 0.3),
+                -1px -1px 1px rgba(0, 0, 0, 0.3);
+            position: relative;
+        }
+
+        .click-number {
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            font-size: 24px;
+            font-weight: bold;
+            color: #1a1a1a;
+            background: rgba(255, 255, 255, 0.1);
+            padding: 5px 15px;
+            border-radius: 15px;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+        }
+
+        .score {
+            font-size: 32px;
+            margin: 20px 0;
+            color: #daa520;
+            text-shadow: 0 0 10px rgba(255, 215, 0, 0.3);
+        }
+
+        .generate-btn {
+            background: linear-gradient(145deg, #b8860b, #daa520);
+            color: #1a1a1a;
+            border: none;
+            padding: 15px 30px;
+            border-radius: 30px;
+            cursor: pointer;
+            font-size: 18px;
+            font-weight: bold;
+            margin-top: 20px;
+            text-transform: uppercase;
+            box-shadow: 0 4px 15px rgba(255, 215, 0, 0.2);
+            font-family: 'Cinzel', serif;
+            border: 2px solid rgba(255, 255, 255, 0.1);
+            transition: all 0.3s ease;
+        }
+
+        .generate-btn:hover {
+            background: linear-gradient(145deg, #daa520, #b8860b);
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(255, 215, 0, 0.3);
+        }
+
+        .generate-btn:disabled {
+            background: #2a2a2a;
+            color: #444;
+            border-color: #333;
+            box-shadow: none;
+            transform: none;
+        }
+
+        .code {
+            margin-top: 20px;
+            padding: 20px;
+            background: rgba(30, 30, 30, 0.9);
+            border-radius: 15px;
+            word-break: break-all;
+            display: none;
+            border: 1px solid rgba(255, 215, 0, 0.1);
+            box-shadow: inset 0 0 10px rgba(0, 0, 0, 0.5);
+        }
+
+        .clicks-needed {
+            color: #daa520;
+            font-size: 16px;
+            margin-top: 15px;
+            opacity: 0.8;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .plus-animation {
+            position: absolute;
+            color: #ffd700;
+            font-size: 28px;
+            font-weight: bold;
+            pointer-events: none;
+            animation: floatUp 1s ease-out forwards;
+            text-shadow:
+                0 0 10px rgba(255, 215, 0, 0.5),
+                2px 2px 2px rgba(0, 0, 0, 0.3);
+        }
+
+        @keyframes floatUp {
+            0% {
+                transform: translateY(0) scale(1);
+                opacity: 1;
+            }
+
+            100% {
+                transform: translateY(-120px) scale(2);
+                opacity: 0;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <div class="score">Баланс: <span id="clicks">0</span></div>
+        <div class="click-area" id="clickArea">
+            <div class="click-text">N</div>
+            <div class="click-number">+16</div>
+        </div>
+        <div class="clicks-needed">Нужно 500 кликов</div>
+        <button class="generate-btn" id="generateBtn" disabled>Получить код</button>
+        <div class="code" id="codeResult"></div>
+    </div>
+
+    <script>
+        let clicks = 0;
+        const clicksNeeded = 500;
+        const clickArea = document.getElementById('clickArea');
+        const clicksDisplay = document.getElementById('clicks');
+        const generateBtn = document.getElementById('generateBtn');
+        const codeResult = document.getElementById('codeResult');
+
+        function createPlusAnimation(x, y) {
+            const plus = document.createElement('div');
+            plus.className = 'plus-animation';
+            plus.textContent = '+16';
+            plus.style.left = x + 'px';
+            plus.style.top = y + 'px';
+            clickArea.appendChild(plus);
+            setTimeout(() => plus.remove(), 1000);
+        }
+
+        clickArea.onclick = (e) => {
+            clicks += 16;
+            clicksDisplay.textContent = clicks;
+            createPlusAnimation(e.offsetX, e.offsetY);
+
+            if (clicks >= clicksNeeded) {
+                generateBtn.disabled = false;
+            }
+        };
+
+        function generateRandomString(length) {
+            const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+            let result = '';
+            for (let i = 0; i < length; i++) {
+                result += chars.charAt(Math.floor(Math.random() * chars.length));
+            }
+            return result;
+        }
+
+        generateBtn.onclick = () => {
+            if (clicks >= clicksNeeded) {
+                const amount = Math.floor(Math.random() * 900) + 100;
+                const code = generateRandomString(32);
+                codeResult.style.display = 'block';
+                codeResult.innerHTML = `
+                    <p>Ваш код на ${amount} рублей:</p>
+                    <strong>${code}</strong>
+                    <p>Отправьте этот код боту</p>
+                `;
+                clicks = 0;
+                clicksDisplay.textContent = clicks;
+                generateBtn.disabled = true;
+            }
+        };
+    </script>
+</body>
+
+</html>
