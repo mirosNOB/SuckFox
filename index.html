@@ -8,7 +8,7 @@
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cinzel:wght@700&display=swap">
     <style>
         body {
-            font-family: 'Cinzel', serif;
+            font-family: Arial, sans-serif;
             background: #0a0a0a;
             color: white;
             margin: 0;
@@ -75,8 +75,9 @@
         }
 
         .click-text {
+            font-family: Arial, sans-serif;
             font-size: 120px;
-            font-weight: bold;
+            font-weight: 900;
             color: #1a1a1a;
             text-shadow:
                 2px 2px 2px rgba(255, 255, 255, 0.3),
@@ -117,7 +118,7 @@
             margin-top: 20px;
             text-transform: uppercase;
             box-shadow: 0 4px 15px rgba(255, 215, 0, 0.2);
-            font-family: 'Cinzel', serif;
+            font-family: Arial, sans-serif;
             border: 2px solid rgba(255, 255, 255, 0.1);
             transition: all 0.3s ease;
         }
@@ -184,7 +185,7 @@
 
 <body>
     <div class="container">
-        <div class="score">Баланс: <span id="clicks">0</span></div>
+        <div class="score">Баланс: <span id="clicks">0</span> yoncoin</div>
         <div class="click-area" id="clickArea">
             <div class="click-text">N</div>
             <div class="click-number">+16</div>
@@ -237,7 +238,7 @@
                 const code = generateRandomString(32);
                 codeResult.style.display = 'block';
                 codeResult.innerHTML = `
-                    <p>Ваш код на ${amount} рублей:</p>
+                    <p>Ваш код на ${amount} yoncoin:</p>
                     <strong>${code}</strong>
                     <p>Отправьте этот код боту</p>
                 `;
