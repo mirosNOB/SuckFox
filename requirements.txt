@@ -1,0 +1,17 @@
+aiogram==2.25.2
+python-dotenv
+g4f
+python-telegram-bot-pagination
+asyncio
+aiohttp==3.8.5
+telethon
+apscheduler
+pytz
+reportlab
+fpdf
+transliterate
+requests
+beautifulsoup4
+vk_api
+newspaper3k
+lxml-html-clean
