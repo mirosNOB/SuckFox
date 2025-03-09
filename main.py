@@ -28,7 +28,8 @@ from ai_service import (
     get_available_models,
     get_user_model,
     user_models,
-    MONICA_MODELS
+    MONICA_MODELS,
+    OPENROUTER_MODELS
 )
 import aiohttp
 from typing import List, Optional
@@ -627,7 +628,13 @@ async def process_new_prompt(message: types.Message, state: FSMContext):
 async def ai_settings(message: types.Message, state: FSMContext = None, **kwargs):
     # Получаем текущую модель пользователя
     current_model = get_user_model(message.from_user.id)
-    model_info = MONICA_MODELS[current_model]
+    all_models = get_available_models()
+    model_info = all_models[current_model]
+    
+    # Определяем сервис модели
+    service = "Monica AI"
+    if current_model in OPENROUTER_MODELS:
+        service = "OpenRouter"
     
     # Создаем клавиатуру
     keyboard = types.InlineKeyboardMarkup(row_width=1)
@@ -636,6 +643,7 @@ async def ai_settings(message: types.Message, state: FSMContext = None, **kwargs
     await message.answer(
         f"📊 Текущие настройки ИИ:\n\n"
         f"🔹 Модель: {model_info['name']}\n"
+        f"🔧 Сервис: {service}\n"
         f"📝 Описание: {model_info['description']}\n"
         f"📊 Макс. токенов: {model_info['max_tokens']}\n\n"
         f"ℹ️ Выберите, что хотите настроить:",
@@ -646,9 +654,20 @@ async def ai_settings(message: types.Message, state: FSMContext = None, **kwargs
 async def show_models(callback_query: types.CallbackQuery, state: FSMContext = None):
     # Получаем текущую модель
     current_model = get_user_model(callback_query.from_user.id)
+    all_models = get_available_models()
     
     # Создаем клавиатуру для выбора модели
     keyboard = types.InlineKeyboardMarkup(row_width=1)
+    
+    # Добавляем заголовок для моделей Monica AI
+    keyboard.add(
+        types.InlineKeyboardButton(
+            "--- MONICA AI МОДЕЛИ ---",
+            callback_data="no_action"
+        )
+    )
+    
+    # Добавляем модели Monica AI
     for model_id, model_info in MONICA_MODELS.items():
         keyboard.add(
             types.InlineKeyboardButton(
@@ -656,10 +675,28 @@ async def show_models(callback_query: types.CallbackQuery, state: FSMContext = N
                 callback_data=f"select_model_{model_id}"
             )
         )
+    
+    # Добавляем заголовок для моделей OpenRouter
+    keyboard.add(
+        types.InlineKeyboardButton(
+            "--- OPENROUTER МОДЕЛИ ---",
+            callback_data="no_action"
+        )
+    )
+    
+    # Добавляем модели OpenRouter
+    for model_id, model_info in OPENROUTER_MODELS.items():
+        keyboard.add(
+            types.InlineKeyboardButton(
+                f"{'✅ ' if model_id == current_model else ''}{model_info['name']}",
+                callback_data=f"select_model_{model_id}"
+            )
+        )
+    
     keyboard.add(types.InlineKeyboardButton("🔙 Назад", callback_data="back_to_settings"))
     
     await callback_query.message.edit_text(
-        f"Текущая модель: {MONICA_MODELS[current_model]['name']}\n\n"
+        f"Текущая модель: {all_models[current_model]['name']}\n\n"
         f"Выберите новую модель из списка:",
         reply_markup=keyboard
     )
@@ -671,7 +708,13 @@ async def process_model_selection(callback_query: types.CallbackQuery, state: FS
     
     # Обновляем модель пользователя
     user_models[callback_query.from_user.id] = selected_model
-    model_info = MONICA_MODELS[selected_model]
+    all_models = get_available_models()
+    model_info = all_models[selected_model]
+    
+    # Определяем сервис модели
+    service = "Monica AI"
+    if selected_model in OPENROUTER_MODELS:
+        service = "OpenRouter"
     
     # Создаем клавиатуру
     keyboard = types.InlineKeyboardMarkup(row_width=1)
@@ -682,6 +725,7 @@ async def process_model_selection(callback_query: types.CallbackQuery, state: FS
         f"📊 Текущие настройки ИИ:\n\n"
         f"✅ Модель успешно изменена!\n\n"
         f"🔹 Модель: {model_info['name']}\n"
+        f"🔧 Сервис: {service}\n"
         f"📝 Описание: {model_info['description']}\n"
         f"📊 Макс. токенов: {model_info['max_tokens']}\n\n"
         f"ℹ️ Выберите, что хотите настроить:",
@@ -693,6 +737,11 @@ async def process_model_selection(callback_query: types.CallbackQuery, state: FS
 @dp.callback_query_handler(lambda c: c.data == "back_to_settings")
 async def back_to_settings(callback_query: types.CallbackQuery, state: FSMContext = None):
     await ai_settings(callback_query.message, state)
+
+@dp.callback_query_handler(lambda c: c.data == "no_action")
+async def no_action(callback_query: types.CallbackQuery):
+    # Просто отвечаем на callback_query, чтобы убрать часы загрузки
+    await callback_query.answer()
 
 async def get_channel_posts(channel_link: str, hours: int = 24) -> list:
     """Получаем посты из канала за последние hours часов"""
