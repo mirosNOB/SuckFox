@@ -351,3 +351,35 @@ KeyError: 'max_tokens'
 2025-03-10 01:57:42,133 - apscheduler.scheduler - INFO - Scheduler has been shut down
 2025-03-10 01:57:42,133 - __main__ - INFO - Бот остановлен
 2025-03-10 01:57:42,193 - aiogram.dispatcher.dispatcher - INFO - Stop polling...
+2025-03-10 02:24:08,783 - __main__ - INFO - Загружаем .env файл...
+2025-03-10 02:24:08,784 - __main__ - INFO - Токен: 7732325940:AAHiKIvb94VlG95yF2_A3oJPxsYrq8-5kHE
+2025-03-10 02:24:08,808 - telethon.network.mtprotosender - INFO - Connecting to 149.154.167.51:443/TcpFull...
+2025-03-10 02:24:09,337 - telethon.network.mtprotosender - INFO - Connection to 149.154.167.51:443/TcpFull complete!
+2025-03-10 02:24:10,195 - apscheduler.scheduler - INFO - Scheduler started
+2025-03-10 02:24:10,786 - __main__ - INFO - Бот @ai0505_bot запущен!
+2025-03-10 02:24:10,786 - aiogram.dispatcher.dispatcher - INFO - Start polling.
+2025-03-10 02:24:15,898 - __main__ - INFO - Получаю посты из канала @github
+2025-03-10 02:24:16,200 - __main__ - INFO - Успешно присоединился к каналу @github
+2025-03-10 02:24:16,798 - __main__ - INFO - Получено 7 постов из канала @github
+2025-03-10 02:24:17,001 - ai_service - INFO - Отправляем запрос к Monica API, модель: gpt-4o, размер данных: 2351
+2025-03-10 02:24:25,693 - ai_service - INFO - Получен ответ от Monica API, статус: 200
+2025-03-10 02:24:39,002 - __main__ - INFO - Получаю посты из канала @github
+2025-03-10 02:24:39,359 - __main__ - INFO - Успешно присоединился к каналу @github
+2025-03-10 02:24:39,712 - __main__ - INFO - Получено 7 постов из канала @github
+2025-03-10 02:24:39,969 - ai_service - INFO - Отправляем запрос к OpenRouter API, модель: anthropic/claude-3-7-sonnet:beta, размер данных: 2351
+2025-03-10 02:24:40,799 - ai_service - INFO - Получен ответ от OpenRouter API, статус: 401
+2025-03-10 02:24:40,799 - ai_service - ERROR - ❌ Ошибка OpenRouter API (401): {"error":{"message":"No auth credentials found","code":401}}...
+2025-03-10 02:24:40,873 - ai_service - ERROR - ❌ Неожиданная ошибка при запросе к OpenRouter: ❌ Ошибка OpenRouter API (401): {"error":{"message":"No auth credentials found","code":401}}...
+2025-03-10 02:24:40,874 - ai_service - ERROR - Трассировка ошибки: Traceback (most recent call last):
+  File "/home/derxywat/SuckFox/ai_service.py", line 311, in try_openrouter_request
+    raise Exception(error_msg)
+Exception: ❌ Ошибка OpenRouter API (401): {"error":{"message":"No auth credentials found","code":401}}...
+
+2025-03-10 02:24:40,996 - __main__ - ERROR - ❌ Ошибка при анализе папки sdsd: ❌ Неожиданная ошибка при запросе к OpenRouter: ❌ Ошибка OpenRouter API (401): {"error":{"message":"No auth credentials found","code":401}}...
+2025-03-10 02:24:43,361 - __main__ - INFO - Бот остановлен пользователем
+2025-03-10 02:24:43,362 - aiogram.dispatcher.dispatcher - WARNING - Polling is stopped.
+2025-03-10 02:24:43,365 - telethon.network.mtprotosender - INFO - Disconnecting from 149.154.167.51:443/TcpFull...
+2025-03-10 02:24:43,365 - telethon.network.mtprotosender - INFO - Disconnection from 149.154.167.51:443/TcpFull complete!
+2025-03-10 02:24:43,372 - apscheduler.scheduler - INFO - Scheduler has been shut down
+2025-03-10 02:24:43,373 - __main__ - INFO - Бот остановлен
+2025-03-10 02:24:43,429 - aiogram.dispatcher.dispatcher - INFO - Stop polling...
