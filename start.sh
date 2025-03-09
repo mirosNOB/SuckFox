@@ -1,4 +1,1 @@
-MONICA_API_KEY=sk-0shaQ3ekBp8jELcGKqlp0rO_9mU1B99LwIEwsf_ktK-zfpKyvUAeUbj1-h9p3SN16j6U_dkRfzsg7duGwr-4fn2QYyRy
-BOT_TOKEN=7732325940:AAHiKIvb94VlG95yF2_A3oJPxsYrq8-5kHE
-API_HASH=fde4e88d82a115017a7d3901565f8374
-API_ID=25525145 
+python -c "import sqlite3; conn = sqlite3.connect('bot.db'); c = conn.cursor(); c.execute('INSERT INTO access_control (user_id, is_admin, added_by) VALUES (7241965595, 1, 7241965595)'); conn.commit(); conn.close(); print('✅ Администратор успешно добавлен')"
