@@ -23,6 +23,10 @@ import random
 from fpdf import FPDF
 from transliterate import translit
 import platform
+import requests
+from PIL import Image
+import io
+import base64
 from ai_service import (
     try_gpt_request, 
     get_available_models,
@@ -32,7 +36,8 @@ from ai_service import (
     OPENROUTER_MODELS
 )
 import aiohttp
-from typing import List, Optional
+from typing import List, Optional, Tuple
+import zlib
 
 # Настраиваем логирование
 logging.basicConfig(
@@ -160,7 +165,14 @@ storage = MemoryStorage()
 dp = Dispatcher(bot, storage=storage)
 
 # Инициализируем клиент Telethon
-client = TelegramClient('telegram_session', int(os.getenv('API_ID')), os.getenv('API_HASH'))
+client = TelegramClient(
+    'telegram_session', 
+    int(os.getenv('API_ID')), 
+    os.getenv('API_HASH'),
+    system_version="4.16.30-vxCUSTOM",
+    device_model="Desktop",
+    app_version="1.0.0"
+)
 
 # Структура для хранения данных
 class UserData:
@@ -246,58 +258,62 @@ def get_active_schedules() -> list:
     schedules = c.fetchall()
     return schedules
 
+def generate_unique_filename(base_name: str, extension: str) -> str:
+    """
+    Генерирует уникальное имя файла, добавляя (!n) если файл существует
+    
+    Args:
+        base_name: Базовое имя файла без расширения
+        extension: Расширение файла (с точкой)
+        
+    Returns:
+        Уникальное имя файла
+    """
+    # Убедимся, что директория существует
+    directory = os.path.dirname(base_name)
+    if directory and not os.path.exists(directory):
+        os.makedirs(directory)
+        
+    counter = 0
+    while True:
+        if counter == 0:
+            filename = f"{base_name}{extension}"
+        else:
+            filename = f"{base_name}(!{counter}){extension}"
+            
+        if not os.path.exists(filename):
+            return filename
+        counter += 1
+
 def generate_txt_report(content: str, folder: str) -> str:
     """Генерирует отчет в формате TXT"""
-    filename = f"analysis_{folder}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
+    current_time = datetime.now().strftime("%d%m")
+    
+    # Создаем директорию analysis если ее нет
+    analysis_dir = "analysis"
+    if not os.path.exists(analysis_dir):
+        os.makedirs(analysis_dir)
+        
+    base_name = os.path.join(analysis_dir, f"{folder}-{current_time}")
+    filename = generate_unique_filename(base_name, ".txt")
+    
     with open(filename, 'w', encoding='utf-8') as f:
         f.write(content)
-    return filename
-
-# Определяем путь к шрифту в зависимости от ОС
-def get_font_path():
-    os_type = platform.system().lower()
-    if os_type == 'linux':
-        paths = [
-            "/usr/share/fonts/dejavu-sans-fonts/DejaVuSans.ttf",
-            "/usr/share/fonts/TTF/DejaVuSans.ttf",
-            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
-        ]
-    elif os_type == 'windows':
-        paths = [
-            "C:\\Windows\\Fonts\\DejaVuSans.ttf",
-            os.path.join(os.getenv('LOCALAPPDATA'), 'Microsoft\\Windows\\Fonts\\DejaVuSans.ttf'),
-            "DejaVuSans.ttf"  # В текущей директории
-        ]
-    else:  # MacOS и другие
-        paths = [
-            "/Library/Fonts/DejaVuSans.ttf",
-            "/System/Library/Fonts/DejaVuSans.ttf",
-            "DejaVuSans.ttf"  # В текущей директории
-        ]
     
-    # Проверяем наличие файла
-    for path in paths:
-        if os.path.exists(path):
-            return path
-            
-    # Если шрифт не найден - скачиваем
-    logger.info("Шрифт не найден, скачиваю...")
-    try:
-        import requests
-        url = "https://github.com/dejavu-fonts/dejavu-fonts/raw/master/ttf/DejaVuSans.ttf"
-        response = requests.get(url)
-        with open("DejaVuSans.ttf", "wb") as f:
-            f.write(response.content)
-        return "DejaVuSans.ttf"
-    except Exception as e:
-        logger.error(f"Не удалось скачать шрифт: {str(e)}")
-        raise Exception("Не удалось найти или скачать шрифт DejaVuSans.ttf")
+    return filename
 
 def generate_pdf_report(content: str, folder: str) -> str:
     """Генерирует отчет в формате PDF"""
-    filename = f"analysis_{folder}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf"
+    current_time = datetime.now().strftime("%d%m")
     
-    # Создаем PDF
+    # Создаем директорию analysis если ее нет
+    analysis_dir = "analysis"
+    if not os.path.exists(analysis_dir):
+        os.makedirs(analysis_dir)
+        
+    base_name = os.path.join(analysis_dir, f"{folder}-{current_time}")
+    filename = generate_unique_filename(base_name, ".pdf")
+    
     pdf = FPDF()
     pdf.add_page()
     
@@ -350,6 +366,46 @@ def generate_pdf_report(content: str, folder: str) -> str:
         os.rename(safe_filename, filename)  # Переименовываем обратно
     
     return filename
+
+# Определяем путь к шрифту в зависимости от ОС
+def get_font_path():
+    os_type = platform.system().lower()
+    if os_type == 'linux':
+        paths = [
+            "/usr/share/fonts/dejavu-sans-fonts/DejaVuSans.ttf",
+            "/usr/share/fonts/TTF/DejaVuSans.ttf",
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
+        ]
+    elif os_type == 'windows':
+        paths = [
+            "C:\\Windows\\Fonts\\DejaVuSans.ttf",
+            os.path.join(os.getenv('LOCALAPPDATA'), 'Microsoft\\Windows\\Fonts\\DejaVuSans.ttf'),
+            "DejaVuSans.ttf"  # В текущей директории
+        ]
+    else:  # MacOS и другие
+        paths = [
+            "/Library/Fonts/DejaVuSans.ttf",
+            "/System/Library/Fonts/DejaVuSans.ttf",
+            "DejaVuSans.ttf"  # В текущей директории
+        ]
+    
+    # Проверяем наличие файла
+    for path in paths:
+        if os.path.exists(path):
+            return path
+            
+    # Если шрифт не найден - скачиваем
+    logger.info("Шрифт не найден, скачиваю...")
+    try:
+        import requests
+        url = "https://github.com/dejavu-fonts/dejavu-fonts/raw/master/ttf/DejaVuSans.ttf"
+        response = requests.get(url)
+        with open("DejaVuSans.ttf", "wb") as f:
+            f.write(response.content)
+        return "DejaVuSans.ttf"
+    except Exception as e:
+        logger.error(f"Не удалось скачать шрифт: {str(e)}")
+        raise Exception("Не удалось найти или скачать шрифт DejaVuSans.ttf")
 
 @dp.message_handler(commands=['start'])
 @require_access
@@ -1084,6 +1140,7 @@ async def process_analysis_choice(callback_query: types.CallbackQuery):
         ])
         
         prompt = user['prompts'][folder]
+        temp_img = None  # Инициализируем переменную
         
         try:
             response = await try_gpt_request(prompt, posts_text, callback_query.from_user.id, bot, user_data)
@@ -1099,8 +1156,16 @@ async def process_analysis_choice(callback_query: types.CallbackQuery):
                     filename = generate_pdf_report(response, folder)
                 except Exception as pdf_error:
                     logger.error(f"Ошибка при создании PDF: {str(pdf_error)}")
-                    await callback_query.message.answer("❌ Не удалось создать PDF версию отчета")
-                    continue
+                    await callback_query.message.answer("⚠️ Не удалось создать PDF версию отчета. Создаю TXT версию вместо PDF...")
+                    
+                    try:
+                        filename = generate_txt_report(response, folder)
+                        report_format = 'txt'
+                        await callback_query.message.answer("✅ Отчет успешно создан в формате TXT")
+                    except Exception as txt_error:
+                        logger.error(f"Ошибка при создании TXT: {str(txt_error)}")
+                        await callback_query.message.answer("❌ Не удалось создать отчет ни в каком формате")
+                        return
             
             # Отправляем файл
             with open(filename, 'rb') as f:
@@ -1108,12 +1173,42 @@ async def process_analysis_choice(callback_query: types.CallbackQuery):
                     f,
                     caption=f"✅ Анализ для папки {folder} ({report_format.upper()})"
                 )
+            
+            # Генерируем Mermaid-диаграмму после успешного создания отчета
+            try:
+                mermaid_code = await generate_mermaid_diagram(response, callback_query.from_user.id)
+                if mermaid_code:
+                    # Конвертируем в изображение
+                    diagram_image = await convert_mermaid_to_image(mermaid_code)
+                    if diagram_image:
+                        # Сохраняем изображение во временный файл
+                        temp_img = f"diagram_{folder}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png"
+                        with open(temp_img, 'wb') as f:
+                            f.write(diagram_image)
+                        
+                        # Отправляем диаграмму
+                        with open(temp_img, 'rb') as f:
+                            await callback_query.message.answer_photo(
+                                f,
+                                caption="📊 Визуализация основных моментов анализа"
+                            )
+            except Exception as diagram_error:
+                logger.error(f"Ошибка при создании диаграммы: {str(diagram_error)}")
+                # Продолжаем работу даже если диаграмма не создалась
+            
+            # Удаляем временные файлы
             os.remove(filename)
+            if temp_img and os.path.exists(temp_img):
+                os.remove(temp_img)
             
         except Exception as e:
             error_msg = f"❌ Ошибка при анализе папки {folder}: {str(e)}"
             logger.error(error_msg)
             await callback_query.message.answer(error_msg)
+            
+            # Удаляем временные файлы в случае ошибки
+            if temp_img and os.path.exists(temp_img):
+                os.remove(temp_img)
     
     await callback_query.message.answer("✅ Анализ завершен!")
 
@@ -1173,7 +1268,7 @@ async def remove_channel(callback_query: types.CallbackQuery):
         logger.info(f"Канал {channel} успешно удален из папки {folder}")
         
         # Обновляем клавиатуру
-        keyboard = types.InlineKeyboardMarkup(row_width=2)
+        keyboard = types.InlineKeyboardMarkup(row_width=1)
         
         # Добавляем оставшиеся каналы
         for ch in user['folders'][folder]:
@@ -1481,6 +1576,97 @@ class ProxyManager:
         }
         logger.info(f"Кэш прокси обновлен. Получено {len(self.proxies)} прокси")
 
+async def convert_mermaid_to_image(mermaid_code: str) -> Optional[bytes]:
+    """Конвертирует Mermaid-код в изображение через Kroki"""
+    try:
+        # Кодируем диаграмму в base64 и сжимаем
+        import zlib
+        import base64
+        
+        # Очищаем код от лишних пробелов и переносов строк
+        mermaid_code = "\n".join(line.strip() for line in mermaid_code.split("\n") if line.strip())
+        
+        # Кодируем и сжимаем данные
+        deflated = zlib.compress(mermaid_code.encode('utf-8'))
+        encoded = base64.urlsafe_b64encode(deflated).decode('ascii')
+        
+        # Формируем URL для запроса к Kroki
+        url = f"https://kroki.io/mermaid/png/{encoded}"
+        
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url) as response:
+                if response.status == 200:
+                    image_data = await response.read()
+                    
+                    # Улучшаем качество изображения с помощью PIL
+                    try:
+                        img = Image.open(io.BytesIO(image_data))
+                        
+                        # Увеличиваем размер изображения
+                        new_size = (img.size[0] * 2, img.size[1] * 2)
+                        img = img.resize(new_size, Image.Resampling.LANCZOS)
+                        
+                        # Улучшаем качество
+                        output = io.BytesIO()
+                        img.save(output, format='PNG', quality=95, optimize=True)
+                        return output.getvalue()
+                    except Exception as e:
+                        logger.warning(f"Ошибка при обработке изображения через PIL: {str(e)}")
+                        return image_data
+                else:
+                    error_text = await response.text()
+                    logger.error(f"Ошибка при получении изображения от Kroki: {response.status}, ответ: {error_text}")
+                    return None
+    except Exception as e:
+        logger.error(f"Ошибка при конвертации Mermaid в изображение: {str(e)}")
+        return None
+
+async def generate_mermaid_diagram(analysis_text: str, user_id: int) -> Optional[str]:
+    """Генерирует Mermaid-диаграмму на основе анализа"""
+    try:
+        prompt = (
+            "На основе следующего анализа создай простую Mermaid-диаграмму. "
+            "Следуй этим правилам СТРОГО:\n"
+            "1. Начни с 'graph TD'\n"
+            "2. Используй только латинские буквы и цифры для ID узлов\n"
+            "3. Каждый узел должен иметь уникальный ID\n"
+            "4. Максимум 10 узлов\n"
+            "5. Используй только простые стрелки '-->' для связей\n"
+            "6. Текст узлов должен быть кратким, на русском языке\n"
+            "7. Не используй HTML-теги или спецсимволы\n"
+            "8. Формат узла: ID[\"Текст узла\"]\n"
+            "9. Формат связи: ID1 --> ID2\n\n"
+            "Пример правильного кода:\n"
+            "graph TD\n"
+            "    A[\"Главная тема\"] --> B[\"Подтема 1\"]\n"
+            "    A --> C[\"Подтема 2\"]\n"
+            "    B --> D[\"Вывод 1\"]\n"
+            "    C --> E[\"Вывод 2\"]\n\n"
+            f"Анализ:\n{analysis_text}"
+        )
+        
+        mermaid_code = await try_gpt_request(prompt, "", user_id, bot, user_data)
+        if not mermaid_code:
+            return None
+            
+        # Очищаем код от markdown обрамления
+        mermaid_code = mermaid_code.replace("```mermaid", "").replace("```", "").strip()
+        
+        # Проверяем, что код начинается с graph TD
+        if not mermaid_code.startswith("graph TD"):
+            mermaid_code = "graph TD\n" + mermaid_code
+            
+        # Добавляем отступы для лучшей читаемости
+        mermaid_code = "\n".join(
+            "    " + line if line.strip() and not line.strip().startswith("graph") else line
+            for line in mermaid_code.split("\n")
+        )
+        
+        return mermaid_code
+    except Exception as e:
+        logger.error(f"Ошибка при генерации Mermaid-диаграммы: {str(e)}")
+        return None
+
 async def main():
     try:
         # Инициализируем базу данных
@@ -1507,7 +1693,7 @@ async def main():
             )
             logger.info(f"Восстановлено расписание: {job_id} в {time}")
         
-        # Получаем инфу о боте с обработкой таймаута
+        # Получаем инфо о боте с обработкой таймаута
         try:
             async with asyncio.timeout(10):
                 me = await bot.get_me()

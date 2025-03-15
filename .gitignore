@@ -3,3 +3,9 @@
 /bot.py
 /requirements.txt
 /venv
+/bot.log
+/analysis
+/__pychache__
+/telegram_session.session
+/telegram_session.session-journal
+/user_data.json

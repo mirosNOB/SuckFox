@@ -304,13 +304,39 @@ async def try_openrouter_request(prompt: str, posts_text: str, user_id: int, bot
                                 await status_message.edit_text(error_msg)
                             raise Exception(error_msg)
                     else:
-                        error_msg = f"❌ Ошибка OpenRouter API ({response.status}): {response_text[:200]}..."
-                        logger.error(error_msg)
+                        # Обработка специфических ошибок
+                        error_data = json.loads(response_text) if response_text else {}
+                        error_message = error_data.get('error', {}).get('message', 'Неизвестная ошибка')
+                        error_code = error_data.get('error', {}).get('code', response.status)
+                        
+                        # Формируем сообщение об ошибке в зависимости от кода
+                        if error_code == 400:
+                            error_msg = "❌ Некорректный запрос к API. Пожалуйста, попробуйте позже."
+                        elif error_code == 401:
+                            if "No auth credentials found" in error_message:
+                                error_msg = "❌ Ошибка авторизации: API ключ не найден или некорректен."
+                            else:
+                                error_msg = "❌ Ошибка авторизации: закончились кредиты или API ключ устарел."
+                        elif error_code == 403:
+                            error_msg = "❌ Доступ запрещен: контент не прошел модерацию."
+                        elif error_code == 408:
+                            error_msg = "❌ Превышено время ожидания ответа от ИИ. OpenRouter прервал соединение."
+                        elif error_code == 429:
+                            error_msg = "❌ Нет доступа к API. Возможно, вы используете API из неподдерживаемого региона."
+                        elif error_code == 502:
+                            error_msg = "❌ Некорректный ответ от ИИ. Попробуйте повторить запрос."
+                        elif error_code == 503:
+                            error_msg = "❌ Выбранная модель ИИ больше не доступна в OpenRouter."
+                        else:
+                            error_msg = f"❌ Ошибка OpenRouter API ({error_code}): {error_message}"
+                        
+                        logger.error(f"{error_msg}\nПолный ответ: {response_text[:200]}...")
                         if status_message:
                             await status_message.edit_text(error_msg)
                         raise Exception(error_msg)
+                        
         except asyncio.TimeoutError:
-            error_msg = f"❌ Превышено время ожидания ответа от OpenRouter. Возможно, запрос слишком большой или сервер перегружен."
+            error_msg = "❌ Превышено время ожидания ответа от OpenRouter. Возможно, запрос слишком большой или сервер перегружен."
             logger.error(error_msg)
             if status_message:
                 await status_message.edit_text(error_msg)
