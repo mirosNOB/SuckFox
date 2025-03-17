@@ -35,6 +35,12 @@ from ai_service import (
     MONICA_MODELS,
     OPENROUTER_MODELS
 )
+from vk_scraper import (
+    get_vk_posts,
+    parse_website,
+    get_content_from_sources,
+    is_valid_vk_link
+)
 import aiohttp
 from typing import List, Optional, Tuple
 import zlib
@@ -165,14 +171,7 @@ storage = MemoryStorage()
 dp = Dispatcher(bot, storage=storage)
 
 # Инициализируем клиент Telethon
-client = TelegramClient(
-    'telegram_session', 
-    int(os.getenv('API_ID')), 
-    os.getenv('API_HASH'),
-    system_version="4.16.30-vxCUSTOM",
-    device_model="Desktop",
-    app_version="1.0.0"
-)
+client = TelegramClient('telegram_session', int(os.getenv('API_ID')), os.getenv('API_HASH'))
 
 # Структура для хранения данных
 class UserData:
@@ -220,6 +219,9 @@ class BotStates(StatesGroup):
     waiting_for_schedule_time = State()
     waiting_for_user_id = State()
     waiting_for_adding_user_type = State()
+    waiting_for_vk_source = State()
+    waiting_for_website_url = State()
+    waiting_for_source_type = State()
 
 class AccessControlStates(StatesGroup):
     waiting_for_user_id = State()
@@ -258,62 +260,58 @@ def get_active_schedules() -> list:
     schedules = c.fetchall()
     return schedules
 
-def generate_unique_filename(base_name: str, extension: str) -> str:
-    """
-    Генерирует уникальное имя файла, добавляя (!n) если файл существует
-    
-    Args:
-        base_name: Базовое имя файла без расширения
-        extension: Расширение файла (с точкой)
-        
-    Returns:
-        Уникальное имя файла
-    """
-    # Убедимся, что директория существует
-    directory = os.path.dirname(base_name)
-    if directory and not os.path.exists(directory):
-        os.makedirs(directory)
-        
-    counter = 0
-    while True:
-        if counter == 0:
-            filename = f"{base_name}{extension}"
-        else:
-            filename = f"{base_name}(!{counter}){extension}"
-            
-        if not os.path.exists(filename):
-            return filename
-        counter += 1
-
 def generate_txt_report(content: str, folder: str) -> str:
     """Генерирует отчет в формате TXT"""
-    current_time = datetime.now().strftime("%d%m")
-    
-    # Создаем директорию analysis если ее нет
-    analysis_dir = "analysis"
-    if not os.path.exists(analysis_dir):
-        os.makedirs(analysis_dir)
-        
-    base_name = os.path.join(analysis_dir, f"{folder}-{current_time}")
-    filename = generate_unique_filename(base_name, ".txt")
-    
+    filename = f"analysis_{folder}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
     with open(filename, 'w', encoding='utf-8') as f:
         f.write(content)
-    
     return filename
+
+# Определяем путь к шрифту в зависимости от ОС
+def get_font_path():
+    os_type = platform.system().lower()
+    if os_type == 'linux':
+        paths = [
+            "/usr/share/fonts/dejavu-sans-fonts/DejaVuSans.ttf",
+            "/usr/share/fonts/TTF/DejaVuSans.ttf",
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
+        ]
+    elif os_type == 'windows':
+        paths = [
+            "C:\\Windows\\Fonts\\DejaVuSans.ttf",
+            os.path.join(os.getenv('LOCALAPPDATA'), 'Microsoft\\Windows\\Fonts\\DejaVuSans.ttf'),
+            "DejaVuSans.ttf"  # В текущей директории
+        ]
+    else:  # MacOS и другие
+        paths = [
+            "/Library/Fonts/DejaVuSans.ttf",
+            "/System/Library/Fonts/DejaVuSans.ttf",
+            "DejaVuSans.ttf"  # В текущей директории
+        ]
+    
+    # Проверяем наличие файла
+    for path in paths:
+        if os.path.exists(path):
+            return path
+            
+    # Если шрифт не найден - скачиваем
+    logger.info("Шрифт не найден, скачиваю...")
+    try:
+        import requests
+        url = "https://github.com/dejavu-fonts/dejavu-fonts/raw/master/ttf/DejaVuSans.ttf"
+        response = requests.get(url)
+        with open("DejaVuSans.ttf", "wb") as f:
+            f.write(response.content)
+        return "DejaVuSans.ttf"
+    except Exception as e:
+        logger.error(f"Не удалось скачать шрифт: {str(e)}")
+        raise Exception("Не удалось найти или скачать шрифт DejaVuSans.ttf")
 
 def generate_pdf_report(content: str, folder: str) -> str:
     """Генерирует отчет в формате PDF"""
-    current_time = datetime.now().strftime("%d%m")
+    filename = f"analysis_{folder}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf"
     
-    # Создаем директорию analysis если ее нет
-    analysis_dir = "analysis"
-    if not os.path.exists(analysis_dir):
-        os.makedirs(analysis_dir)
-        
-    base_name = os.path.join(analysis_dir, f"{folder}-{current_time}")
-    filename = generate_unique_filename(base_name, ".pdf")
-    
+    # Создаем PDF
     pdf = FPDF()
     pdf.add_page()
     
@@ -367,55 +365,14 @@ def generate_pdf_report(content: str, folder: str) -> str:
     
     return filename
 
-# Определяем путь к шрифту в зависимости от ОС
-def get_font_path():
-    os_type = platform.system().lower()
-    if os_type == 'linux':
-        paths = [
-            "/usr/share/fonts/dejavu-sans-fonts/DejaVuSans.ttf",
-            "/usr/share/fonts/TTF/DejaVuSans.ttf",
-            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
-        ]
-    elif os_type == 'windows':
-        paths = [
-            "C:\\Windows\\Fonts\\DejaVuSans.ttf",
-            os.path.join(os.getenv('LOCALAPPDATA'), 'Microsoft\\Windows\\Fonts\\DejaVuSans.ttf'),
-            "DejaVuSans.ttf"  # В текущей директории
-        ]
-    else:  # MacOS и другие
-        paths = [
-            "/Library/Fonts/DejaVuSans.ttf",
-            "/System/Library/Fonts/DejaVuSans.ttf",
-            "DejaVuSans.ttf"  # В текущей директории
-        ]
-    
-    # Проверяем наличие файла
-    for path in paths:
-        if os.path.exists(path):
-            return path
-            
-    # Если шрифт не найден - скачиваем
-    logger.info("Шрифт не найден, скачиваю...")
-    try:
-        import requests
-        url = "https://github.com/dejavu-fonts/dejavu-fonts/raw/master/ttf/DejaVuSans.ttf"
-        response = requests.get(url)
-        with open("DejaVuSans.ttf", "wb") as f:
-            f.write(response.content)
-        return "DejaVuSans.ttf"
-    except Exception as e:
-        logger.error(f"Не удалось скачать шрифт: {str(e)}")
-        raise Exception("Не удалось найти или скачать шрифт DejaVuSans.ttf")
-
-@dp.message_handler(commands=['start'])
-@require_access
-async def cmd_start(message: types.Message, state: FSMContext = None, **kwargs):
-    me = await bot.get_me()
+def get_main_keyboard(user_id: int):
+    """Создаёт клавиатуру главного меню в зависимости от роли пользователя."""
     keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True)
     buttons = [
         "📁 Создать папку",
         "📋 Список папок",
         "✏️ Изменить промпт",
+        "🌐 Добавить источники",
         "⚙️ Настройка ИИ",
         "🔄 Запустить анализ",
         "📊 История отчетов",
@@ -423,14 +380,21 @@ async def cmd_start(message: types.Message, state: FSMContext = None, **kwargs):
     ]
     
     # Добавляем кнопки администратора
-    if is_user_admin(message.from_user.id):
+    if is_user_admin(user_id):
         buttons.extend([
             "👥 Управление доступом"
         ])
     
     keyboard.add(*buttons)
+    return keyboard
+
+@dp.message_handler(commands=['start'])
+@require_access
+async def cmd_start(message: types.Message, state: FSMContext = None, **kwargs):
+    me = await bot.get_me()
+    keyboard = get_main_keyboard(message.from_user.id)
     await message.answer(
-        f"Привет! Я бот для анализа Telegram каналов.\n"
+        f"Привет! Я бот для анализа Telegram каналов, групп ВКонтакте и веб-сайтов.\n"
         f"Мой юзернейм: @{me.username}\n"
         "Что хочешь сделать?",
         reply_markup=keyboard
@@ -502,8 +466,28 @@ async def process_folder_name(message: types.Message, state: FSMContext):
     )
 
 def is_valid_channel(channel_link: str) -> bool:
-    """Проверяем, что ссылка похожа на канал"""
-    return bool(re.match(r'^@[\w\d_]+$', channel_link))
+    """Проверяет, является ли канал допустимой ссылкой на Telegram, ВК или веб-сайт."""
+    # Проверяем ссылки ВКонтакте
+    if is_valid_vk_link(channel_link):
+        return True
+    
+    # Проверяем ссылки на веб-сайты
+    if channel_link.startswith('http://') or channel_link.startswith('https://'):
+        return True
+    
+    # Проверяем ссылки Telegram
+    patterns = [
+        r'^@([a-zA-Z0-9_]{5,})$',
+        r'^https?://t\.me/([a-zA-Z0-9_]{5,})$',
+        r'^t\.me/([a-zA-Z0-9_]{5,})$',
+        r'^([a-zA-Z0-9_]{5,})$'
+    ]
+    
+    for pattern in patterns:
+        if re.match(pattern, channel_link):
+            return True
+    
+    return False
 
 @dp.message_handler(state=BotStates.waiting_for_channels)
 async def process_channels(message: types.Message, state: FSMContext):
@@ -555,70 +539,128 @@ async def cmd_list_folders(message: types.Message, state: FSMContext = None):
 @dp.callback_query_handler(lambda c: c.data.startswith('edit_folder_'))
 async def edit_folder_menu(callback_query: types.CallbackQuery):
     folder = callback_query.data.replace('edit_folder_', '')
-    keyboard = types.InlineKeyboardMarkup(row_width=2)
+    user = user_data.get_user_data(callback_query.from_user.id)
     
-    # Добавляем кнопки для каждого канала
-    channels = user_data.get_user_data(callback_query.from_user.id)['folders'][folder]
-    for channel in channels:
-        keyboard.add(
-            types.InlineKeyboardButton(
-                f"❌ {channel}",
-                callback_data=f"remove_channel_{folder}_{channel}"  # Не убираем @ из канала
-            )
-        )
+    # Получаем все каналы/источники в этой папке
+    channels = user['folders'].get(folder, [])
     
-    # Добавляем основные кнопки управления
-    keyboard.add(
-        types.InlineKeyboardButton("➕ Добавить каналы", callback_data=f"add_channels_{folder}"),
-        types.InlineKeyboardButton("❌ Удалить папку", callback_data=f"delete_folder_{folder}")
-    )
-    keyboard.add(types.InlineKeyboardButton("🔙 Назад", callback_data="back_to_folders"))
+    # Создаем инлайн клавиатуру
+    keyboard = types.InlineKeyboardMarkup(row_width=1)
+    
+    # Добавляем кнопки для добавления и удаления каналов
+    keyboard.add(types.InlineKeyboardButton(
+        "📋 Список источников", 
+        callback_data=f"list_sources_{folder}"
+    ))
+    keyboard.add(types.InlineKeyboardButton(
+        "➕ Добавить Telegram каналы", 
+        callback_data=f"add_channels_{folder}"
+    ))
+    keyboard.add(types.InlineKeyboardButton(
+        "➕ Добавить источник ВКонтакте", 
+        callback_data=f"add_vk_{folder}"
+    ))
+    keyboard.add(types.InlineKeyboardButton(
+        "➕ Добавить веб-сайт", 
+        callback_data=f"add_website_{folder}"
+    ))
+    keyboard.add(types.InlineKeyboardButton(
+        "✏️ Изменить промпт", 
+        callback_data=f"edit_prompt_{folder}"
+    ))
+    keyboard.add(types.InlineKeyboardButton(
+        "🗑️ Удалить папку", 
+        callback_data=f"delete_folder_{folder}"
+    ))
+    keyboard.add(types.InlineKeyboardButton(
+        "🔙 Назад", 
+        callback_data="back_to_folders"
+    ))
     
     await callback_query.message.edit_text(
-        f"Редактирование папки {folder}:\n"
-        f"Нажми на канал чтобы удалить его:\n" + 
-        "\n".join(f"- {channel}" for channel in channels),
+        f"Редактирование папки '{folder}':", 
         reply_markup=keyboard
     )
 
-@dp.callback_query_handler(lambda c: c.data.startswith('add_channels_'))
-async def add_channels_start(callback_query: types.CallbackQuery, state: FSMContext):
-    folder = callback_query.data.replace('add_channels_', '')
-    await state.update_data(current_folder=folder)
-    await BotStates.waiting_for_channels.set()
-    
-    await callback_query.message.answer(
-        "Отправь ссылки на каналы для добавления.\n"
-        "Каждую ссылку с новой строки.\n"
-        "Когда закончишь, напиши 'готово'"
-    )
-
-@dp.callback_query_handler(lambda c: c.data.startswith('delete_folder_'))
-async def delete_folder(callback_query: types.CallbackQuery):
-    folder = callback_query.data.replace('delete_folder_', '')
+@dp.callback_query_handler(lambda c: c.data.startswith('list_sources_'))
+async def list_sources(callback_query: types.CallbackQuery):
+    """Отображает список всех источников в папке."""
+    folder = callback_query.data.replace('list_sources_', '')
     user = user_data.get_user_data(callback_query.from_user.id)
     
-    if folder in user['folders']:
-        del user['folders'][folder]
-        del user['prompts'][folder]
-        user_data.save()
+    # Получаем все источники в этой папке
+    sources = user['folders'].get(folder, [])
+    
+    if not sources:
+        await callback_query.answer("В этой папке нет источников")
+        return
+    
+    # Создаем инлайн клавиатуру для удаления источников
+    keyboard = types.InlineKeyboardMarkup(row_width=1)
+    
+    # Добавляем кнопки для каждого источника
+    for source in sources:
+        # Определяем тип источника
+        if is_valid_vk_link(source):
+            source_type = "ВКонтакте"
+        elif source.startswith('http://') or source.startswith('https://'):
+            source_type = "Веб-сайт"
+        else:
+            source_type = "Telegram"
         
-        await callback_query.message.edit_text(f"✅ Папка {folder} удалена")
+        # Ограничиваем длину отображаемого имени
+        display_name = source
+        if len(display_name) > 30:
+            display_name = display_name[:27] + "..."
         
+        keyboard.add(types.InlineKeyboardButton(
+            f"🗑️ {source_type}: {display_name}",
+            callback_data=f"remove_channel_{folder}_{source}"
+        ))
+    
+    # Добавляем кнопку "Назад"
+    keyboard.add(types.InlineKeyboardButton(
+        "🔙 Назад",
+        callback_data=f"edit_folder_{folder}"
+    ))
+    
+    await callback_query.message.edit_text(
+        f"Источники в папке '{folder}' (нажмите на источник, чтобы удалить):",
+        reply_markup=keyboard
+    )
+
+@dp.callback_query_handler(lambda c: c.data.startswith('add_vk_'))
+async def add_vk_start(callback_query: types.CallbackQuery, state: FSMContext):
+    """Начинаем процесс добавления источника ВКонтакте."""
+    folder = callback_query.data.replace('add_vk_', '')
+    
+    # Сохраняем папку и тип источника в state
+    await state.update_data(folder=folder, source_type="vk")
+    await BotStates.waiting_for_vk_source.set()
+    
+    await callback_query.message.answer(
+        "Введите ссылку на группу или пользователя ВКонтакте (например, vk.com/group или просто название группы):",
+        reply_markup=types.ReplyKeyboardRemove()
+    )
+
+@dp.callback_query_handler(lambda c: c.data.startswith('add_website_'))
+async def add_website_start(callback_query: types.CallbackQuery, state: FSMContext):
+    """Начинаем процесс добавления веб-сайта."""
+    folder = callback_query.data.replace('add_website_', '')
+    
+    # Сохраняем папку и тип источника в state
+    await state.update_data(folder=folder, source_type="website")
+    await BotStates.waiting_for_website_url.set()
+    
+    await callback_query.message.answer(
+        "Введите URL веб-сайта (например, example.com):",
+        reply_markup=types.ReplyKeyboardRemove()
+    )
+
 @dp.callback_query_handler(lambda c: c.data == "back_to_folders")
 async def back_to_folders(callback_query: types.CallbackQuery):
     await callback_query.message.delete()  # Удаляем сообщение с инлайн клавиатурой
-    keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True)
-    buttons = [
-        "📁 Создать папку",
-        "📋 Список папок",
-        "✏️ Изменить промпт",
-        "⚙️ Настройка ИИ",
-        "🔄 Запустить анализ",
-        "📊 История отчетов",
-        "⏰ Настроить расписание"
-    ]
-    keyboard.add(*buttons)
+    keyboard = get_main_keyboard(callback_query.from_user.id)
     await callback_query.message.answer("Главное меню:", reply_markup=keyboard)
 
 @dp.message_handler(lambda message: message.text == "✏️ Изменить промпт")
@@ -667,6 +709,7 @@ async def process_new_prompt(message: types.Message, state: FSMContext):
         "📁 Создать папку",
         "📋 Список папок",
         "✏️ Изменить промпт",
+        "🌐 Добавить источники",
         "⚙️ Настройка ИИ",
         "🔄 Запустить анализ",
         "📊 История отчетов",
@@ -679,6 +722,45 @@ async def process_new_prompt(message: types.Message, state: FSMContext):
         f"Промпт для папки {folder} обновлен!",
         reply_markup=keyboard
     )
+
+@dp.message_handler(lambda message: message.text == "🌐 Добавить источники")
+async def add_sources_start(message: types.Message):
+    await BotStates.waiting_for_vk_source.set()
+    await message.answer("Отправь ссылку на группу ВКонтакте или веб-сайт:")
+
+@dp.message_handler(state=BotStates.waiting_for_vk_source)
+async def process_vk_source(message: types.Message, state: FSMContext):
+    vk_link = message.text
+    if is_valid_vk_link(vk_link):
+        await state.update_data(vk_source=vk_link)
+        await BotStates.waiting_for_website_url.set()
+        await message.answer("Отправь ссылку на веб-сайт:")
+    else:
+        await message.answer("❌ Неверная ссылка на группу ВКонтакте или веб-сайт. Попробуй еще раз.")
+
+@dp.message_handler(state=BotStates.waiting_for_website_url)
+async def process_website_url(message: types.Message, state: FSMContext):
+    website_url = message.text
+    if parse_website(website_url):
+        await state.update_data(website_url=website_url)
+        await BotStates.waiting_for_source_type.set()
+        await message.answer("Выбери тип источника:\n1. Текстовый\n2. Видео")
+    else:
+        await message.answer("❌ Неверная ссылка на веб-сайт. Попробуй еще раз.")
+
+@dp.message_handler(state=BotStates.waiting_for_source_type)
+async def process_source_type(message: types.Message, state: FSMContext):
+    source_type = message.text
+    if source_type == "1":
+        await state.update_data(source_type="text")
+        await BotStates.waiting_for_vk_source.set()
+        await message.answer("Отправь ссылку на группу ВКонтакте или веб-сайт:")
+    elif source_type == "2":
+        await state.update_data(source_type="video")
+        await BotStates.waiting_for_vk_source.set()
+        await message.answer("Отправь ссылку на видео:")
+    else:
+        await message.answer("❌ Неверный выбор. Пожалуйста, выбери 1 или 2.")
 
 @dp.message_handler(lambda message: message.text == "⚙️ Настройка ИИ")
 async def ai_settings(message: types.Message, state: FSMContext = None, **kwargs):
@@ -957,6 +1039,7 @@ async def process_schedule_time(message: types.Message, state: FSMContext):
             "📁 Создать папку",
             "📋 Список папок",
             "✏️ Изменить промпт",
+            "�� Добавить источники",
             "⚙️ Настройка ИИ",
             "🔄 Запустить анализ",
             "📊 История отчетов",
@@ -1120,17 +1203,14 @@ async def process_analysis_choice(callback_query: types.CallbackQuery):
         
         all_posts = []
         for channel in channels:
-            if not is_valid_channel(channel):
-                continue
-                
             posts = await get_channel_posts(channel, hours=hours)
             if posts:
                 all_posts.extend(posts)
             else:
-                await callback_query.message.answer(f"⚠️ Не удалось получить посты из канала {channel}")
+                await callback_query.message.answer(f"⚠️ Не удалось получить данные из источника {channel}")
         
         if not all_posts:
-            await callback_query.message.answer(f"❌ Не удалось получить посты из каналов в папке {folder}")
+            await callback_query.message.answer(f"❌ Не удалось получить данные из источников в папке {folder}")
             continue
             
         # Сортируем посты по дате
@@ -1202,30 +1282,15 @@ async def process_analysis_choice(callback_query: types.CallbackQuery):
                 os.remove(temp_img)
             
         except Exception as e:
-            error_msg = f"❌ Ошибка при анализе папки {folder}: {str(e)}"
-            logger.error(error_msg)
-            await callback_query.message.answer(error_msg)
-            
-            # Удаляем временные файлы в случае ошибки
-            if temp_img and os.path.exists(temp_img):
-                os.remove(temp_img)
-    
-    await callback_query.message.answer("✅ Анализ завершен!")
+            logger.error(f"Ошибка при анализе: {str(e)}")
+            await callback_query.message.answer(f"❌ Ошибка при анализе: {str(e)}")
 
 @dp.message_handler(lambda message: message.text == "🔙 Назад", state="*")
 async def back_to_main_menu(message: types.Message, state: FSMContext):
+    """Возврат в главное меню из любого состояния."""
     await state.finish()
-    keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True)
-    buttons = [
-        "📁 Создать папку",
-        "📋 Список папок",
-        "✏️ Изменить промпт",
-        "⚙️ Настройка ИИ",
-        "🔄 Запустить анализ",
-        "📊 История отчетов",
-        "⏰ Настроить расписание"
-    ]
-    await message.answer("Главное меню:", reply_markup=keyboard)
+    keyboard = get_main_keyboard(message.from_user.id)
+    await message.answer("Выберите действие:", reply_markup=keyboard)
 
 @dp.callback_query_handler(lambda c: c.data.startswith('remove_channel_'))
 async def remove_channel(callback_query: types.CallbackQuery):
@@ -1383,6 +1448,7 @@ async def process_add_user(message: types.Message, state: FSMContext):
                 "📁 Создать папку",
                 "📋 Список папок",
                 "✏️ Изменить промпт",
+                "�� Добавить источники",
                 "⚙️ Настройка ИИ",
                 "🔄 Запустить анализ",
                 "📊 История отчетов",
@@ -1693,7 +1759,7 @@ async def main():
             )
             logger.info(f"Восстановлено расписание: {job_id} в {time}")
         
-        # Получаем инфо о боте с обработкой таймаута
+        # Получаем инфу о боте с обработкой таймаута
         try:
             async with asyncio.timeout(10):
                 me = await bot.get_me()
@@ -1714,6 +1780,46 @@ async def main():
         await bot.session.close()
         await client.disconnect()
         scheduler.shutdown()
+
+@dp.callback_query_handler(lambda c: c.data.startswith('add_channels_'))
+async def add_channels_start(callback_query: types.CallbackQuery, state: FSMContext):
+    folder = callback_query.data.replace('add_channels_', '')
+    await state.update_data(current_folder=folder)
+    await BotStates.waiting_for_channels.set()
+    
+    await callback_query.message.answer(
+        "Отправь ссылки на каналы для добавления.\n"
+        "Каждую ссылку с новой строки.\n"
+        "Когда закончишь, напиши 'готово'"
+    )
+
+@dp.callback_query_handler(lambda c: c.data.startswith('delete_folder_'))
+async def delete_folder(callback_query: types.CallbackQuery):
+    folder = callback_query.data.replace('delete_folder_', '')
+    user = user_data.get_user_data(callback_query.from_user.id)
+    
+    if folder in user['folders']:
+        del user['folders'][folder]
+        del user['prompts'][folder]
+        user_data.save()
+    
+        await callback_query.message.edit_text(f"✅ Папка {folder} удалена")
+
+@dp.callback_query_handler(lambda c: c.data.startswith('edit_prompt_'))
+async def edit_prompt_callback(callback_query: types.CallbackQuery, state: FSMContext):
+    """Обработчик для редактирования промпта через инлайн-кнопку."""
+    folder = callback_query.data.replace('edit_prompt_', '')
+    await state.update_data(folder_to_edit=folder)
+    await BotStates.waiting_for_prompt.set()
+    
+    # Показываем текущий промпт
+    user = user_data.get_user_data(callback_query.from_user.id)
+    current_prompt = user['prompts'].get(folder, "")
+    
+    await callback_query.message.answer(
+        f"Текущий промпт для папки '{folder}':\n\n{current_prompt}\n\n"
+        "Введите новый промпт для анализа данных из этой папки:"
+    )
 
 if __name__ == '__main__':
     # Настраиваем политику событийного цикла
