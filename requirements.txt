@@ -15,4 +15,3 @@ beautifulsoup4
 vk_api
 newspaper3k
 lxml-html-clean
-bs4
